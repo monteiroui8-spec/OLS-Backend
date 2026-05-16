@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\xampp\\\\htdocs\\\\OLS-Backend\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "Bash(Head -20)",
+      "Bash(Get-ChildItem -Path \"c:\\\\xampp\\\\htdocs\\\\OLS\" -Force)"
+    ]
+  }
+}
