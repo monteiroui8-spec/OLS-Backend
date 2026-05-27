@@ -20,6 +20,10 @@ class User extends Authenticatable
         'role','status','avatar_url','country',
         'preferred_language','preferred_currency',
         'email_verified_at','last_login_at',
+        // Dados pessoais do aluno
+        'bi_number','birth_date','gender','nationality',
+        'address','province','marital_status',
+        'guardian_name','guardian_phone',
     ];
 
     protected $hidden = ['password','remember_token'];
@@ -28,6 +32,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'last_login_at'     => 'datetime',
         'two_factor_enabled'=> 'boolean',
+        'birth_date'        => 'date',
     ];
 
     public function getFullNameAttribute(): string

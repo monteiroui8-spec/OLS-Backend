@@ -23,7 +23,7 @@ class PaymentDueNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
-            'type' => 'PAYMENT',
+            'type' => 'payment',
             'title' => 'Mensalidade pendente',
             'body' => 'Pagamento '.$this->payment->description.' vence em '.$this->payment->due_date->format('d/m/Y'),
             'paymentId' => $this->payment->id,

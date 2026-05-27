@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Notifications\PaymentConfirmedNotification;
+use App\Notifications\PaymentRejectedNotification;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -167,7 +168,7 @@ class AdminPaymentController extends Controller
 
         if (($validated['status'] ?? null) === 'paid' && $payment->student && $payment->student->user) {
             $user = $payment->student->user;
-            // $user->notify(new PaymentConfirmedNotification($payment));
+            $user->notify(new PaymentConfirmedNotification($payment));
             
             // Check if it's the first payment
             $isFirstPayment = Payment::where('student_id', $payment->student_id)
@@ -194,6 +195,9 @@ class AdminPaymentController extends Controller
                 $message->to($user->email, $user->full_name)
                     ->subject('Pagamento Rejeitado - Olsangola Corporation');
             });
+            try {
+                $user->notify(new PaymentRejectedNotification($payment, $validated['rejection_reason'] ?? ''));
+            } catch (\Throwable) { /* Non-fatal */ }
         }
 
         return response()->json([

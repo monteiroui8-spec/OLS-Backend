@@ -7,6 +7,7 @@ use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\Grade;
+use App\Notifications\GradeAssignedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,13 @@ class StudentExamController extends Controller
     public function index(Request $request): JsonResponse
     {
         $student = $request->user()->studentProfile;
+
+        // Pre-load this student's completed attempts indexed by exam_id
+        $attempts = ExamAttempt::where('student_id', $student->id)
+            ->where('status', 'completed')
+            ->orderByDesc('submitted_at')
+            ->get()
+            ->groupBy('exam_id');
 
         $exams = Exam::where(function ($query) use ($student) {
             // exams assigned directly to the student's class group via class_group_id
@@ -43,13 +51,24 @@ class StudentExamController extends Controller
             ->published()
             ->orderBy('due_date')
             ->get()
-            ->map(function (Exam $exam) {
+            ->map(function (Exam $exam) use ($attempts) {
+                // Best completed attempt for this exam
+                $examAttempts = $attempts->get($exam->id);
+                $bestAttempt  = $examAttempts?->sortByDesc('score')->first();
+
                 return [
-                    'id' => $exam->id,
-                    'title' => $exam->title,
-                    'status' => $exam->status,
-                    'due_date' => $exam->due_date,
-                    'duration' => $exam->duration,
+                    'id'          => $exam->id,
+                    'title'       => $exam->title,
+                    'status'      => $exam->status,
+                    'due_date'    => $exam->due_date,
+                    'duration'    => $exam->duration,
+                    'pass_score'  => $exam->pass_score,
+                    // Attempt data (null if not yet completed)
+                    'attempt_id'  => $bestAttempt?->id,
+                    'score'       => $bestAttempt ? (float) $bestAttempt->score : null,
+                    'passed'      => $bestAttempt ? (bool) $bestAttempt->passed : null,
+                    'submitted_at'=> $bestAttempt?->submitted_at?->toISOString(),
+                    'attempt_count'=> $examAttempts?->count() ?? 0,
                 ];
             });
 
@@ -174,7 +193,7 @@ class StudentExamController extends Controller
                 'passed' => $passed,
             ]);
 
-            Grade::create([
+            $grade = Grade::create([
                 'student_id' => $attempt->student_id,
                 'teacher_id' => $exam->teacher_id,
                 'title' => $exam->title,
@@ -185,6 +204,15 @@ class StudentExamController extends Controller
                 'max_grade' => 100,
                 'date' => now()->toDateString(),
             ]);
+
+            // Notify student about exam grade
+            try {
+                $attempt->loadMissing('student.user');
+                $studentUser = $attempt->student?->user;
+                if ($studentUser) {
+                    $studentUser->notify(new GradeAssignedNotification($grade));
+                }
+            } catch (\Throwable) { /* Non-fatal */ }
         });
 
         return response()->json([
@@ -209,11 +237,14 @@ class StudentExamController extends Controller
         $attempt->load(['exam', 'answers.question']);
 
         $breakdown = $attempt->answers->map(function (ExamAnswer $answer) {
+            $opts = $answer->question?->options ?? [];
+            $yourIdx = $answer->answer;
+            $correctIdx = $answer->question?->correct;
             return [
                 'questionId' => $answer->question_id,
                 'text' => $answer->question?->text,
-                'yourAnswer' => $answer->answer,
-                'correctAnswer' => $answer->question?->correct,
+                'yourAnswer' => is_int($yourIdx) && isset($opts[$yourIdx]) ? $opts[$yourIdx] : null,
+                'correctAnswer' => is_int($correctIdx) && isset($opts[$correctIdx]) ? $opts[$correctIdx] : null,
                 'correct' => $answer->is_correct,
             ];
         });

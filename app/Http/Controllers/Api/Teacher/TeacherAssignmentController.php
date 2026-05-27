@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\Assignment;
 use App\Models\AssignmentSubmission;
+use App\Models\Enrollment;
+use App\Notifications\AssignmentCreatedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -14,6 +16,10 @@ class TeacherAssignmentController extends Controller
     public function index(Request $request): JsonResponse
     {
         $teacher = $request->user()->teacherProfile;
+
+        if (!$teacher) {
+            return response()->json(['message' => 'Perfil de professor não encontrado.'], 403);
+        }
 
         $assignments = Assignment::where('teacher_id', $teacher->id)
             ->withCount('submissions')
@@ -60,6 +66,10 @@ class TeacherAssignmentController extends Controller
     {
         $teacher = $request->user()->teacherProfile;
 
+        if (!$teacher) {
+            return response()->json(['message' => 'Perfil de professor não encontrado.'], 403);
+        }
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -90,7 +100,40 @@ class TeacherAssignmentController extends Controller
             'attachment_url' => $attachmentUrl,
         ]);
 
-        return response()->json($assignment, 201);
+        // Notify enrolled students in the class group
+        if ($assignment->class_group_id) {
+            try {
+                $enrollments = Enrollment::where('class_group_id', $assignment->class_group_id)
+                    ->whereIn('status', ['active', 'enrolled'])
+                    ->with('student.user')
+                    ->get();
+
+                foreach ($enrollments as $enrollment) {
+                    if ($enrollment->student?->user) {
+                        $enrollment->student->user->notify(new AssignmentCreatedNotification($assignment));
+                    }
+                }
+            } catch (\Throwable) {
+                // Non-fatal
+            }
+        }
+
+        $assignment->load(['course', 'classGroup']);
+
+        return response()->json([
+            'id'            => $assignment->id,
+            'title'         => $assignment->title,
+            'description'   => $assignment->description,
+            'course'        => $assignment->course?->getTitle(app()->getLocale()) ?? 'N/A',
+            'class'         => $assignment->classGroup?->name ?? 'N/A',
+            'class_group_id'=> $assignment->class_group_id,
+            'course_id'     => $assignment->course_id,
+            'dueDate'       => $assignment->due_date?->toDateString(),
+            'points'        => $assignment->points,
+            'attachmentUrl' => $assignment->attachment_url,
+            'submissions'   => 0,
+            'status'        => $assignment->due_date && $assignment->due_date->isPast() ? 'closed' : 'active',
+        ], 201);
     }
 
     public function grade(Request $request, AssignmentSubmission $submission): JsonResponse

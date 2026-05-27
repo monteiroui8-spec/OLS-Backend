@@ -4,7 +4,14 @@
       "Bash(Get-ChildItem -Path \"c:\\\\xampp\\\\htdocs\\\\OLS-Backend\" -Force)",
       "Bash(Select-Object Name, Mode)",
       "Bash(Head -20)",
-      "Bash(Get-ChildItem -Path \"c:\\\\xampp\\\\htdocs\\\\OLS\" -Force)"
+      "Bash(Get-ChildItem -Path \"c:\\\\xampp\\\\htdocs\\\\OLS\" -Force)",
+      "Bash(xargs grep -l \"CreateConversation\\\\|CreateGroup\\\\|group.*chat\\\\|chat.*group\")",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js|vue\\)$\")",
+      "Bash(xargs grep -l \"axios\\\\|fetch\\\\|http\")",
+      "PowerShell($response = Invoke-WebRequest -Uri \"http://localhost:8080/api/student/testimonials\" -Headers @{\"Accept\"=\"application/json\"} -Method GET -ErrorAction SilentlyContinue; Write-Host \"Status: $\\($response.StatusCode\\)\"; Write-Host \"Body: $\\($response.Content\\)\")",
+      "PowerShell($body = '{\"email\":\"admin@olsangola.ao\",\"password\":\"admin12345\"}'; $resp = Invoke-RestMethod -Uri \"http://localhost:8080/api/auth/login\" -Method POST -Body $body -ContentType \"application/json\" -ErrorAction SilentlyContinue; $token = $resp.token; Write-Host \"Token: $\\($token.Substring\\(0,10\\)\\)...\")",
+      "Bash(npx tsc *)",
+      "Bash(php artisan *)"
     ]
   }
 }

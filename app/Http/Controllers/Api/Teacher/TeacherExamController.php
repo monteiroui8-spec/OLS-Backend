@@ -4,15 +4,55 @@ namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClassGroup;
+use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\Question;
+use App\Notifications\ExamPublishedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class TeacherExamController extends Controller
 {
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private function formatExam(Exam $exam): array
+    {
+        return [
+            'id'               => $exam->id,
+            'title'            => $exam->title,
+            'class_group_id'   => $exam->class_group_id,
+            'classGroupName'   => $exam->classGroup?->name ?? '—',
+            'course'           => $exam->classGroup?->course?->title_pt ?? '—',
+            'duration'         => $exam->duration,
+            'max_attempts'     => $exam->max_attempts,
+            'pass_score'       => $exam->pass_score,
+            'due_date'         => $exam->due_date?->toDateString(),
+            'start_date'       => $exam->start_date?->toDateString(),
+            'end_date'         => $exam->end_date?->toDateString(),
+            'status'           => $exam->status,
+            'questionCount'    => $exam->questions->count(),
+            'totalStudents'    => collect([
+                $exam->classGroup?->students()->count() ?? 0,
+                $exam->assignments->where('assignable_type', \App\Models\StudentProfile::class)->count(),
+            ])->sum(),
+            'submissionsCount' => $exam->attempts->where('status', 'completed')->count(),
+            'assignments'      => $exam->assignments->map(fn ($a) => [
+                'id'   => $a->assignable_id,
+                'type' => $a->assignable_type === \App\Models\ClassGroup::class ? 'class' : 'student',
+            ]),
+            'questions'        => $exam->questions->map(fn ($q) => [
+                'id'      => $q->id,
+                'text'    => $q->text,
+                'type'    => $q->type,
+                'options' => $q->options,
+                'correct' => $q->correct,
+                'points'  => $q->points,
+            ]),
+        ];
+    }
+
     public function index(Request $request): JsonResponse
     {
         $teacher = $request->user()->teacherProfile;
@@ -22,40 +62,7 @@ class TeacherExamController extends Controller
             ->orderByDesc('created_at')
             ->paginate($request->integer('limit', 20));
 
-        $data = $exams->map(function (Exam $exam) {
-            return [
-                'id'             => $exam->id,
-                'title'          => $exam->title,
-                'class_group_id' => $exam->class_group_id,
-                'classGroupName' => $exam->classGroup?->name ?? '—',
-                'course'         => $exam->classGroup?->course?->title_pt ?? '—',
-                'duration'       => $exam->duration,
-                'max_attempts'   => $exam->max_attempts,
-                'pass_score'     => $exam->pass_score,
-                'due_date'       => $exam->due_date?->toDateString(),
-                'status'         => $exam->status,
-                'questionCount'  => $exam->questions->count(),
-                'totalStudents'  => collect([
-                    $exam->classGroup?->students()->count() ?? 0,
-                    $exam->assignments->where('assignable_type', \App\Models\StudentProfile::class)->count()
-                ])->sum(),
-                'submissionsCount' => $exam->attempts->where('status', 'completed')->count(),
-                'assignments'    => $exam->assignments->map(fn ($a) => [
-                    'id'   => $a->assignable_id,
-                    'type' => $a->assignable_type === \App\Models\ClassGroup::class ? 'class' : 'student'
-                ]),
-                'questions'      => $exam->questions->map(function ($q) {
-                    return [
-                        'id'      => $q->id,
-                        'text'    => $q->text,
-                        'type'    => $q->type,
-                        'options' => $q->options,
-                        'correct' => $q->correct,
-                        'points'  => $q->points,
-                    ];
-                }),
-            ];
-        });
+        $data = $exams->map(fn (Exam $exam) => $this->formatExam($exam));
 
         return response()->json([
             'data' => $data,
@@ -78,6 +85,8 @@ class TeacherExamController extends Controller
             'duration' => ['required', 'integer', 'min:1'],
             'max_attempts' => ['nullable', 'integer', 'min:1'],
             'due_date' => ['nullable', 'date'],
+            'start_date' => ['nullable', 'date'],
+            'end_date'   => ['nullable', 'date', 'after_or_equal:start_date'],
             'pass_score' => ['nullable', 'integer', 'min:0', 'max:100'],
             'assignments'    => ['nullable', 'array'],
             'assignments.*.type' => ['required', 'in:class,student'],
@@ -105,8 +114,10 @@ class TeacherExamController extends Controller
                 'teacher_id' => $teacher->id,
                 'duration' => $validated['duration'],
                 'max_attempts' => $validated['max_attempts'] ?? 1,
-                'status' => 'draft',
-                'due_date' => $validated['due_date'] ?? null,
+                'status'     => 'draft',
+                'due_date'   => $validated['due_date'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date'   => $validated['end_date'] ?? null,
                 'pass_score' => $validated['pass_score'] ?? 50,
                 'total_points' => 0,
             ]);
@@ -141,13 +152,9 @@ class TeacherExamController extends Controller
             return $exam;
         });
 
-        $exam->load('questions');
+        $exam->load(['classGroup.course', 'questions', 'assignments', 'attempts']);
 
-        return response()->json([
-            'id' => $exam->id,
-            'title' => $exam->title,
-            'status' => $exam->status,
-        ], 201);
+        return response()->json($this->formatExam($exam), 201);
     }
 
     public function update(Request $request, Exam $exam): JsonResponse
@@ -165,6 +172,8 @@ class TeacherExamController extends Controller
             'duration' => ['required', 'integer', 'min:1'],
             'max_attempts' => ['nullable', 'integer', 'min:1'],
             'due_date' => ['nullable', 'date'],
+            'start_date' => ['nullable', 'date'],
+            'end_date'   => ['nullable', 'date', 'after_or_equal:start_date'],
             'pass_score' => ['nullable', 'integer', 'min:0', 'max:100'],
             'assignments'    => ['nullable', 'array'],
             'assignments.*.type' => ['required', 'in:class,student'],
@@ -191,7 +200,9 @@ class TeacherExamController extends Controller
                 'course_id' => $validated['course_id'] ?? null,
                 'duration' => $validated['duration'],
                 'max_attempts' => $validated['max_attempts'] ?? 1,
-                'due_date' => $validated['due_date'] ?? null,
+                'due_date'   => $validated['due_date'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date'   => $validated['end_date'] ?? null,
                 'pass_score' => $validated['pass_score'] ?? 50,
             ]);
 
@@ -244,11 +255,9 @@ class TeacherExamController extends Controller
             $exam->update(['total_points' => $totalPoints]);
         });
 
-        return response()->json([
-            'id' => $exam->id,
-            'title' => $exam->title,
-            'status' => $exam->status,
-        ]);
+        $exam->load(['classGroup.course', 'questions', 'assignments', 'attempts']);
+
+        return response()->json($this->formatExam($exam));
     }
 
     public function publish(Request $request, Exam $exam): JsonResponse
@@ -269,10 +278,26 @@ class TeacherExamController extends Controller
 
         $exam->update(['status' => 'published']);
 
-        return response()->json([
-            'id' => $exam->id,
-            'status' => $exam->status,
-        ]);
+        $exam->load(['classGroup.course', 'questions', 'assignments', 'attempts']);
+
+        // Notify enrolled students
+        try {
+            if ($exam->class_group_id) {
+                $enrollments = Enrollment::where('class_group_id', $exam->class_group_id)
+                    ->whereIn('status', ['active', 'enrolled'])
+                    ->with('student.user')
+                    ->get();
+                foreach ($enrollments as $enrollment) {
+                    if ($enrollment->student?->user) {
+                        $enrollment->student->user->notify(new ExamPublishedNotification($exam));
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Non-fatal
+        }
+
+        return response()->json($this->formatExam($exam));
     }
 
     public function stats(Request $request, Exam $exam): JsonResponse

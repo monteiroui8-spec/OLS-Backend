@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\Grade;
+use App\Models\StudentProfile;
+use App\Notifications\GradeAssignedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -83,7 +85,28 @@ class TeacherGradeController extends Controller
             'date' => $validated['date'],
         ]);
 
-        return response()->json($grade, 201);
+        $grade->load(['course', 'student.user']);
+
+        // Notify student
+        try {
+            $student = StudentProfile::find($grade->student_id);
+            if ($student?->user) {
+                $student->user->notify(new GradeAssignedNotification($grade));
+            }
+        } catch (\Throwable) {
+            // Non-fatal
+        }
+
+        return response()->json([
+            'id'         => $grade->id,
+            'title'      => $grade->title,
+            'type'       => $grade->type,
+            'grade'      => (float) $grade->grade,
+            'max_grade'  => (float) $grade->max_grade,
+            'date'       => $grade->date,
+            'course'     => $grade->course?->getTitle(app()->getLocale()),
+            'course_id'  => $grade->course_id,
+        ], 201);
     }
 }
 

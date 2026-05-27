@@ -68,6 +68,17 @@ class CourseEnrollmentController extends Controller
             'country'  => ['nullable', 'string', 'size:2'],
             'language' => ['nullable', Rule::in(['pt', 'en'])],
             'currency' => ['nullable', Rule::in(['AOA', 'EUR', 'USD'])],
+
+            // ── Dados pessoais do aluno ──────────────────────────────────
+            'bi_number'      => ['nullable', 'string', 'max:20'],
+            'birth_date'     => ['required', 'date', 'before:-14 years'],
+            'gender'         => ['required', Rule::in(['M', 'F', 'outro'])],
+            'nationality'    => ['nullable', 'string', 'max:80'],
+            'address'        => ['required', 'string', 'max:255'],
+            'province'       => ['nullable', 'string', 'max:80'],
+            'marital_status' => ['nullable', Rule::in(['solteiro', 'casado', 'divorciado', 'viuvo', 'outro'])],
+            'guardian_name'  => ['nullable', 'string', 'max:160'],
+            'guardian_phone' => ['nullable', 'string', 'max:30'],
         ], [
             // ---------------------------------------------------------------
             // 2. Human-readable error messages (Portuguese default)
@@ -96,6 +107,13 @@ class CourseEnrollmentController extends Controller
             'cpf.required' => 'O CPF é obrigatório.',
             'cpf.regex'    => 'CPF inválido. Use o formato 000.000.000-00 ou apenas os 11 dígitos.',
             'cpf.unique'   => 'Este CPF já está registado.',
+
+            'birth_date.required' => 'A data de nascimento é obrigatória.',
+            'birth_date.date'     => 'Data de nascimento inválida.',
+            'birth_date.before'   => 'O aluno deve ter pelo menos 14 anos de idade.',
+            'gender.required'     => 'O sexo é obrigatório.',
+            'gender.in'           => 'Sexo inválido. Use M, F ou outro.',
+            'address.required'    => 'A morada é obrigatória.',
         ]);
 
         // ---------------------------------------------------------------
@@ -144,6 +162,16 @@ class CourseEnrollmentController extends Controller
                 'country'            => $validated['country'] ?? 'AO',
                 'preferred_language' => $validated['language'] ?? 'pt',
                 'preferred_currency' => $validated['currency'] ?? 'AOA',
+                // Dados pessoais
+                'bi_number'      => $validated['bi_number'] ?? null,
+                'birth_date'     => $validated['birth_date'],
+                'gender'         => $validated['gender'],
+                'nationality'    => $validated['nationality'] ?? 'Angolana',
+                'address'        => $validated['address'],
+                'province'       => $validated['province'] ?? null,
+                'marital_status' => $validated['marital_status'] ?? null,
+                'guardian_name'  => $validated['guardian_name'] ?? null,
+                'guardian_phone' => $validated['guardian_phone'] ?? null,
             ]);
 
             Role::findOrCreate('student', 'web');
@@ -209,22 +237,55 @@ class CourseEnrollmentController extends Controller
             'course'      => $course,
             'classGroup'  => $classGroup,
             'responseSla' => '48h',
+            'lang'        => $user->preferred_language ?? 'pt',
         ];
 
-        Mail::send(
-            'emails.enrollment-request-client',
-            $data,
-            fn ($m) => $m->to($user->email, $user->full_name)
-                         ->subject("Pedido de inscrição recebido — {$protocol}"),
-        );
-
-        if ($companyEmail) {
+        // Email de confirmação ao aluno
+        try {
+            $toEmail = $user->email;
+            $toName  = $user->full_name;
             Mail::send(
-                'emails.enrollment-request-company',
+                'emails.enrollment-request-client',
                 $data,
-                fn ($m) => $m->to($companyEmail)
-                             ->subject("Novo pedido de inscrição — {$protocol}"),
+                function ($m) use ($toEmail, $toName, $protocol) {
+                    $m->to($toEmail, $toName)
+                      ->subject("Pedido de inscrição recebido — {$protocol}");
+                }
             );
+            \Illuminate\Support\Facades\Log::info('enrollment_client_email_sent', [
+                'protocol' => $protocol,
+                'email'    => $toEmail,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('enrollment_client_email_failed', [
+                'protocol' => $protocol,
+                'email'    => $user->email,
+                'error'    => $e->getMessage(),
+            ]);
+        }
+
+        // Email de notificação à empresa/admin
+        if ($companyEmail) {
+            try {
+                Mail::send(
+                    'emails.enrollment-request-company',
+                    $data,
+                    function ($m) use ($companyEmail, $protocol) {
+                        $m->to($companyEmail)
+                          ->subject("Novo pedido de inscrição — {$protocol}");
+                    }
+                );
+                \Illuminate\Support\Facades\Log::info('enrollment_company_email_sent', [
+                    'protocol' => $protocol,
+                    'admin'    => $companyEmail,
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('enrollment_company_email_failed', [
+                    'protocol' => $protocol,
+                    'admin'    => $companyEmail,
+                    'error'    => $e->getMessage(),
+                ]);
+            }
         }
     }
 }

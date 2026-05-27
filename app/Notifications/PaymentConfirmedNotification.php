@@ -23,7 +23,7 @@ class PaymentConfirmedNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
-            'type' => 'PAYMENT_CONFIRMED',
+            'type' => 'payment',
             'title' => 'Pagamento confirmado',
             'body' => 'Pagamento '.$this->payment->description.' foi confirmado.',
             'paymentId' => $this->payment->id,

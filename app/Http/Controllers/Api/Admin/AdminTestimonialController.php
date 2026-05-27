@@ -13,8 +13,26 @@ class AdminTestimonialController extends Controller
     public function index(Request $request): JsonResponse
     {
         $limit = $request->integer('limit', 20);
-        $testimonials = Testimonial::orderByDesc('created_at')->paginate($limit);
+        $query = Testimonial::orderByDesc('created_at');
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->get('status'));
+        }
+
+        $testimonials = $query->paginate($limit);
         return response()->json($testimonials);
+    }
+
+    public function approve(Request $request, Testimonial $testimonial): JsonResponse
+    {
+        $testimonial->update(['status' => 'approved', 'is_active' => true]);
+        return response()->json(['message' => 'Testemunho aprovado.', 'data' => $testimonial]);
+    }
+
+    public function reject(Request $request, Testimonial $testimonial): JsonResponse
+    {
+        $testimonial->update(['status' => 'rejected', 'is_active' => false]);
+        return response()->json(['message' => 'Testemunho rejeitado.', 'data' => $testimonial]);
     }
 
     public function store(Request $request): JsonResponse

@@ -356,35 +356,65 @@ class ChatController extends Controller
         $userId = $request->user()->id;
 
         $validated = $request->validate([
-            'type'         => ['required', Rule::in(['direct'])],
-            'recipient_id' => 'required|string|exists:users,id',
+            'type'            => ['required', Rule::in(['direct', 'group'])],
+            // direto
+            'recipient_id'    => 'required_if:type,direct|nullable|string|exists:users,id',
+            // grupo
+            'name'            => 'required_if:type,group|nullable|string|max:100',
+            'participant_ids' => 'required_if:type,group|nullable|array|min:1',
+            'participant_ids.*' => 'string|exists:users,id',
         ]);
 
-        $recipientId = $validated['recipient_id'];
+        if ($validated['type'] === 'direct') {
+            $recipientId = $validated['recipient_id'];
 
-        if ($recipientId === $userId) {
-            return response()->json(['message' => 'Não pode criar uma conversa consigo mesmo.'], 422);
+            if ($recipientId === $userId) {
+                return response()->json(['message' => 'Não pode criar uma conversa consigo mesmo.'], 422);
+            }
+
+            // Verificar se já existe conversa directa
+            $existing = ChatConversation::findDirect($userId, $recipientId);
+            if ($existing) {
+                $existing->load(['participants', 'lastMessage.sender', 'lastMessage.attachment']);
+                return response()->json($this->formatConversation($existing, $userId), 200);
+            }
+
+            $conv = DB::transaction(function () use ($userId, $recipientId) {
+                $conv = ChatConversation::create(['type' => 'direct']);
+                $now  = now();
+                $conv->participants()->attach([
+                    $userId      => ['joined_at' => $now],
+                    $recipientId => ['joined_at' => $now],
+                ]);
+                return $conv;
+            });
+
+            $conv->load(['participants', 'lastMessage']);
+            return response()->json($this->formatConversation($conv, $userId), 201);
         }
 
-        // Verificar se já existe conversa directa
-        $existing = ChatConversation::findDirect($userId, $recipientId);
-        if ($existing) {
-            $existing->load(['participants', 'lastMessage.sender', 'lastMessage.attachment']);
-            return response()->json($this->formatConversation($existing, $userId), 200);
-        }
+        // ── Grupo ────────────────────────────────────────────────────────────
+        $participantIds = collect($validated['participant_ids'] ?? [])
+            ->push($userId)
+            ->unique()
+            ->values()
+            ->toArray();
 
-        $conv = DB::transaction(function () use ($userId, $recipientId) {
-            $conv = ChatConversation::create(['type' => 'direct']);
-            $now = now();
-            $conv->participants()->attach([
-                $userId      => ['joined_at' => $now],
-                $recipientId => ['joined_at' => $now],
+        $conv = DB::transaction(function () use ($participantIds, $validated) {
+            $conv = ChatConversation::create([
+                'type' => 'group',
+                'name' => $validated['name'],
             ]);
+            $now = now();
+            $attachData = [];
+            foreach ($participantIds as $pid) {
+                $attachData[$pid] = ['joined_at' => $now];
+            }
+            $conv->participants()->attach($attachData);
             return $conv;
         });
 
         $conv->load(['participants', 'lastMessage']);
-
         return response()->json($this->formatConversation($conv, $userId), 201);
     }
 

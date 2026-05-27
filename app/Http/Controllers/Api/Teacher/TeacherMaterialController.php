@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Teacher;
 
 use App\Http\Controllers\Controller;
+use App\Models\Enrollment;
 use App\Models\Material;
+use App\Notifications\MaterialPublishedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -151,6 +153,21 @@ class TeacherMaterialController extends Controller
         ]);
 
         $material->load(['classGroup', 'course', 'uploadedBy']);
+
+        // Notify enrolled students when material is published
+        if ($material->is_published && $material->class_group_id) {
+            try {
+                $enrollments = Enrollment::where('class_group_id', $material->class_group_id)
+                    ->whereIn('status', ['active', 'enrolled'])
+                    ->with('student.user')
+                    ->get();
+                foreach ($enrollments as $enrollment) {
+                    if ($enrollment->student?->user) {
+                        $enrollment->student->user->notify(new MaterialPublishedNotification($material));
+                    }
+                }
+            } catch (\Throwable) { /* Non-fatal */ }
+        }
 
         return response()->json($this->formatMaterial($material), 201);
     }

@@ -23,7 +23,11 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request): JsonResponse
     {
-        $user = User::where('email', $request->email)->first();
+        $identifier = $request->email; // pode ser email ou username
+
+        $user = filter_var($identifier, FILTER_VALIDATE_EMAIL)
+            ? User::where('email', $identifier)->first()
+            : User::where('username', $identifier)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             return response()->json([

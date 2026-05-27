@@ -41,9 +41,11 @@
 
         <div class="box">
             <div class="label">Acesso ao sistema</div>
-            <div class="value">Username: {{ $user->username }}</div>
+            <div class="value" style="margin-bottom:6px;">Email (login): {{ $user->email }}</div>
+            <div class="value" style="margin-bottom:6px;">Username: {{ $user->username }}</div>
             @if(isset($plainPassword))
-                <div class="value">Password: {{ $plainPassword }}</div>
+                <div class="value">Password: <span style="font-family:monospace;background:#f1f5f9;padding:2px 6px;border-radius:4px;">{{ $plainPassword }}</span></div>
+                <p style="font-size:12px;color:#64748b;margin:6px 0 0;">Pode entrar com o seu email <strong>ou</strong> username.</p>
             @endif
             @if($loginUrl)
                 <div style="margin-top: 10px;">

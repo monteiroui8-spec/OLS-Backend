@@ -50,7 +50,7 @@
         <table class="detail-table">
           <tr><td>Full Name</td><td>{{ $user->full_name }}</td></tr>
           <tr><td>Email</td><td>{{ $user->email }}</td></tr>
-          <tr><td>Course</td><td>{{ $course->title }}</td></tr>
+          <tr><td>Course</td><td>{{ $course->title_en ?? $course->title_pt ?? '—' }}</td></tr>
           <tr><td>Class Group</td><td>{{ $classGroup->name }} ({{ $classGroup->year }})</td></tr>
           <tr><td>Status</td><td>🟡 Pending review</td></tr>
         </table>
@@ -78,7 +78,7 @@
         <table class="detail-table">
           <tr><td>Nome Completo</td><td>{{ $user->full_name }}</td></tr>
           <tr><td>Email</td><td>{{ $user->email }}</td></tr>
-          <tr><td>Curso</td><td>{{ $course->title }}</td></tr>
+          <tr><td>Curso</td><td>{{ $course->title_pt ?? $course->title_en ?? '—' }}</td></tr>
           <tr><td>Turma</td><td>{{ $classGroup->name }} ({{ $classGroup->year }})</td></tr>
           <tr><td>Estado</td><td>🟡 Aguarda análise</td></tr>
         </table>

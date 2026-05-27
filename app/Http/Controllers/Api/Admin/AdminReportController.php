@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use App\Exports\AdminReportExport;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\ClassGroup;
@@ -13,14 +14,240 @@ use App\Models\StudentProfile;
 use App\Models\TeacherProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\IOFactory;
 
 class AdminReportController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         return response()->json([
-            'message' => 'Use /admin/reports/students, /payments, /attendance',
+            'message' => 'Use /admin/reports/students, /payments, /attendance, /export?format=excel|word',
         ]);
+    }
+
+    /**
+     * Export report as Excel (.xlsx) with multiple formatted sheets and embedded charts.
+     */
+    public function exportExcel(Request $request)
+    {
+        $locale   = $request->get('locale', app()->getLocale());
+        $filename = 'relatorio-olsangola-' . now()->format('Y-m-d') . '.xlsx';
+
+        // Gerar o xlsx como bytes em memória
+        $xlsxBytes = Excel::raw(new AdminReportExport($locale), \Maatwebsite\Excel\Excel::XLSX);
+
+        // Escrever em ficheiro temporário para poder corrigir os IDs via ZipArchive
+        $tempPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('ols_') . '.xlsx';
+        file_put_contents($tempPath, $xlsxBytes);
+
+        // Corrigir IDs duplicados nos drawing XMLs
+        $this->fixXlsxDrawingIds($tempPath);
+
+        return response()->download($tempPath, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Corrige IDs duplicados de shapes nos drawing XMLs do XLSX.
+     * O PhpSpreadsheet atribui IDs começando em 1025 para CADA sheet,
+     * o que cria duplicados no workbook inteiro. O Excel detecta duplicados
+     * como corrompido e faz "Reparo", removendo shapes.
+     */
+    private function fixXlsxDrawingIds(string $path): void
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($path, \ZipArchive::CREATE) !== true) return;
+
+        $counter  = 1001;
+        $modified = [];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (!preg_match('#xl/drawings/drawing\d+\.xml$#', $name)) continue;
+
+            $content = $zip->getFromIndex($i);
+            $content = preg_replace_callback(
+                '/\bid="(\d+)"/',
+                function () use (&$counter) { return 'id="' . ($counter++) . '"'; },
+                $content
+            );
+            $modified[$name] = $content;
+        }
+
+        foreach ($modified as $name => $content) {
+            $zip->deleteName($name);
+            $zip->addFromString($name, $content);
+        }
+
+        $zip->close();
+    }
+
+    /**
+     * Export report as Word (.docx) with tables and headings.
+     */
+    public function exportWord(Request $request)
+    {
+        $locale   = $request->get('locale', app()->getLocale());
+        $phpWord  = new PhpWord();
+        $phpWord->getDefaultFontName('Arial');
+        $phpWord->getDefaultFontSize(11);
+
+        // ── Styles ────────────────────────────────────────────────────────────
+        $phpWord->addTitleStyle(1, ['bold' => true, 'size' => 18, 'color' => '1a3a5c']);
+        $phpWord->addTitleStyle(2, ['bold' => true, 'size' => 14, 'color' => '2563eb']);
+        $phpWord->addTitleStyle(3, ['bold' => true, 'size' => 12, 'color' => '374151']);
+
+        $tableStyle = [
+            'borderSize'  => 6,
+            'borderColor' => 'e4e4e7',
+            'cellMargin'  => 80,
+        ];
+        $headerCellStyle = ['bgColor' => '1a3a5c'];
+        $headerFontStyle = ['bold' => true, 'color' => 'FFFFFF', 'size' => 10];
+        $bodyFontStyle   = ['size' => 10];
+        $altCellStyle    = ['bgColor' => 'f8fafc'];
+
+        // ── Capa ──────────────────────────────────────────────────────────────
+        $cover = $phpWord->addSection();
+        $cover->addTitle('Relatório Administrativo', 1);
+        $cover->addTitle('Olsangola Corporation', 2);
+        $cover->addText('Gerado em: ' . now()->format('d/m/Y H:i'), ['italic' => true, 'color' => '71717a']);
+        $cover->addTextBreak(2);
+
+        // ── Resumo ────────────────────────────────────────────────────────────
+        $totalStudents   = StudentProfile::count();
+        $activeEnroll    = Enrollment::whereIn('status', ['active', 'enrolled'])->count();
+        $totalTeachers   = TeacherProfile::count();
+        $totalRevenue    = (float) Payment::where('status', 'paid')->sum('amount');
+        $pendingPayments = Payment::where('status', 'pending')->count();
+        $overduePayments = Payment::where('status', 'overdue')->count();
+
+        $cover->addTitle('Resumo Executivo', 2);
+        $sumTable = $cover->addTable($tableStyle);
+        $this->addWordTableRow($sumTable, ['Indicador', 'Valor'], $headerCellStyle, $headerFontStyle, true);
+        foreach ([
+            ['Total de Alunos', $totalStudents],
+            ['Inscrições Activas', $activeEnroll],
+            ['Total de Professores', $totalTeachers],
+            ['Receita Total (AOA)', number_format($totalRevenue, 2, ',', '.')],
+            ['Pagamentos Pendentes', $pendingPayments],
+            ['Pagamentos Em Atraso', $overduePayments],
+        ] as $i => $row) {
+            $this->addWordTableRow($sumTable, $row, $i % 2 === 0 ? [] : $altCellStyle, $bodyFontStyle);
+        }
+        // ── Visão geral — chart ───────────────────────────────────────────────
+        $cover->addTextBreak(1);
+        $cover->addTitle('Visão Geral — Indicadores', 3);
+        $cover->addChart('bar',
+            ['Alunos', 'Inscrições', 'Professores', 'Cursos', 'Turmas'],
+            [
+                (int) $totalStudents,
+                (int) $activeEnroll,
+                (int) $totalTeachers,
+                (int) Course::count(),
+                (int) ClassGroup::where('is_active', true)->count(),
+            ],
+            ['width' => 5400000, 'height' => 2800000, 'title' => 'Indicadores Gerais', 'showLegend' => false]
+        );
+
+        $cover->addTextBreak();
+
+        // ── Alunos ────────────────────────────────────────────────────────────
+        $section2 = $phpWord->addSection();
+        $section2->addTitle('Lista de Alunos Inscritos', 2);
+
+        $enrollments = Enrollment::with(['student.user', 'course', 'classGroup'])
+            ->whereIn('status', ['active', 'enrolled'])
+            ->get();
+
+        $studTable = $section2->addTable($tableStyle);
+        $this->addWordTableRow($studTable, ['Nome', 'Email', 'Curso', 'Turma', 'Progresso'], $headerCellStyle, $headerFontStyle, true);
+        foreach ($enrollments->take(100) as $i => $e) {
+            $this->addWordTableRow($studTable, [
+                $e->student?->user?->full_name ?? 'N/D',
+                $e->student?->user?->email ?? 'N/D',
+                $e->course?->getTitle($locale) ?? 'N/D',
+                $e->classGroup?->name ?? 'N/D',
+                ($e->progress_pct ?? 0) . '%',
+            ], $i % 2 === 0 ? [] : $altCellStyle, $bodyFontStyle);
+        }
+
+        if ($enrollments->count() > 100) {
+            $section2->addText('... e mais ' . ($enrollments->count() - 100) . ' registos (ver ficheiro Excel para lista completa).', ['italic' => true, 'size' => 9, 'color' => '71717a']);
+        }
+
+        // ── Alunos por curso — chart ──────────────────────────────────────────
+        $byCourse = Enrollment::selectRaw('course_id, count(*) as total')
+            ->whereIn('status', ['active', 'enrolled'])
+            ->with('course')
+            ->groupBy('course_id')
+            ->get();
+
+        if ($byCourse->isNotEmpty()) {
+            $section2->addTextBreak(1);
+            $section2->addTitle('Alunos por Curso', 3);
+            $section2->addChart('bar',
+                $byCourse->map(fn ($e) => $e->course?->getTitle($locale) ?? 'N/D')->toArray(),
+                $byCourse->pluck('total')->map(fn ($v) => (int) $v)->toArray(),
+                ['width' => 5400000, 'height' => 2800000, 'title' => 'Distribuição por Curso', 'showLegend' => false]
+            );
+        }
+
+        // ── Pagamentos ────────────────────────────────────────────────────────
+        $section3 = $phpWord->addSection();
+        $section3->addTitle('Resumo de Pagamentos', 2);
+
+        $payments = Payment::with('student.user')->orderByDesc('due_date')->take(100)->get();
+        $payTable = $section3->addTable($tableStyle);
+        $this->addWordTableRow($payTable, ['Aluno', 'Descrição', 'Valor (AOA)', 'Estado', 'Vencimento'], $headerCellStyle, $headerFontStyle, true);
+        $statusMap = ['paid' => 'Pago', 'pending' => 'Pendente', 'overdue' => 'Em Atraso', 'cancelled' => 'Cancelado'];
+        foreach ($payments as $i => $p) {
+            $this->addWordTableRow($payTable, [
+                $p->student?->user?->full_name ?? 'N/D',
+                $p->description ?? 'N/D',
+                number_format((float)$p->amount, 2, ',', '.'),
+                $statusMap[$p->status] ?? ucfirst($p->status),
+                $p->due_date?->format('d/m/Y') ?? 'N/D',
+            ], $i % 2 === 0 ? [] : $altCellStyle, $bodyFontStyle);
+        }
+
+        // ── Pagamentos — chart ────────────────────────────────────────────────
+        $section3->addTextBreak(1);
+        $section3->addTitle('Distribuição de Pagamentos', 3);
+        $paidCount    = Payment::where('status', 'paid')->count();
+        $pendingCount = Payment::where('status', 'pending')->count();
+        $overdueCount = Payment::where('status', 'overdue')->count();
+        $section3->addChart('pie',
+            ['Pago', 'Pendente', 'Em Atraso'],
+            [(int) $paidCount, (int) $pendingCount, (int) $overdueCount],
+            ['width' => 4000000, 'height' => 3000000, 'title' => 'Estado dos Pagamentos']
+        );
+
+        // ── Gerar ficheiro ────────────────────────────────────────────────────
+        $filename  = 'relatorio-olsangola-' . now()->format('Y-m-d') . '.docx';
+        $tempPath  = sys_get_temp_dir() . '/' . $filename;
+        $writer    = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($tempPath);
+
+        return response()->download($tempPath, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Helper: add a row to a PHPWord table.
+     */
+    private function addWordTableRow($table, array $cells, array $cellStyle, array $fontStyle, bool $isHeader = false): void
+    {
+        $row = $table->addRow();
+        foreach ($cells as $cell) {
+            $td = $row->addCell(null, $isHeader ? array_merge($cellStyle, ['valign' => 'center']) : $cellStyle);
+            $td->addText(htmlspecialchars((string)$cell), $fontStyle);
+        }
     }
 
     public function enrolledStudents(Request $request): JsonResponse

@@ -58,6 +58,16 @@ class AdminUserController extends Controller
             'country'            => ['nullable', 'string', 'size:2'],
             'preferred_language' => ['nullable', 'in:pt,en'],
             'preferred_currency' => ['nullable', 'in:AOA,EUR,USD'],
+            // Dados pessoais
+            'bi_number'      => ['nullable', 'string', 'max:20'],
+            'birth_date'     => ['nullable', 'date'],
+            'gender'         => ['nullable', 'in:M,F,outro'],
+            'nationality'    => ['nullable', 'string', 'max:80'],
+            'address'        => ['nullable', 'string', 'max:255'],
+            'province'       => ['nullable', 'string', 'max:80'],
+            'marital_status' => ['nullable', 'in:solteiro,casado,divorciado,viuvo,outro'],
+            'guardian_name'  => ['nullable', 'string', 'max:160'],
+            'guardian_phone' => ['nullable', 'string', 'max:30'],
         ]);
 
         // Generate or use provided password — always send it by email.
@@ -75,6 +85,16 @@ class AdminUserController extends Controller
                 'country'            => $validated['country'] ?? 'AO',
                 'preferred_language' => $validated['preferred_language'] ?? 'pt',
                 'preferred_currency' => $validated['preferred_currency'] ?? 'AOA',
+                // Dados pessoais
+                'bi_number'      => $validated['bi_number'] ?? null,
+                'birth_date'     => $validated['birth_date'] ?? null,
+                'gender'         => $validated['gender'] ?? null,
+                'nationality'    => $validated['nationality'] ?? null,
+                'address'        => $validated['address'] ?? null,
+                'province'       => $validated['province'] ?? null,
+                'marital_status' => $validated['marital_status'] ?? null,
+                'guardian_name'  => $validated['guardian_name'] ?? null,
+                'guardian_phone' => $validated['guardian_phone'] ?? null,
             ]);
 
             $user->assignRole($user->role);
@@ -108,6 +128,16 @@ class AdminUserController extends Controller
             'country'            => ['sometimes', 'string', 'size:2'],
             'preferred_language' => ['sometimes', 'in:pt,en'],
             'preferred_currency' => ['sometimes', 'in:AOA,EUR,USD'],
+            // Dados pessoais
+            'bi_number'      => ['sometimes', 'nullable', 'string', 'max:20'],
+            'birth_date'     => ['sometimes', 'nullable', 'date'],
+            'gender'         => ['sometimes', 'nullable', 'in:M,F,outro'],
+            'nationality'    => ['sometimes', 'nullable', 'string', 'max:80'],
+            'address'        => ['sometimes', 'nullable', 'string', 'max:255'],
+            'province'       => ['sometimes', 'nullable', 'string', 'max:80'],
+            'marital_status' => ['sometimes', 'nullable', 'in:solteiro,casado,divorciado,viuvo,outro'],
+            'guardian_name'  => ['sometimes', 'nullable', 'string', 'max:160'],
+            'guardian_phone' => ['sometimes', 'nullable', 'string', 'max:30'],
         ]);
 
         $previousStatus = $user->status;
@@ -277,13 +307,26 @@ class AdminUserController extends Controller
             default   => strtoupper($role),
         };
 
-        $count = match ($role) {
-            'student' => StudentProfile::whereYear('created_at', $year)->count() + 1,
+        // Use o código máximo existente para evitar duplicados por count
+        $next = match ($role) {
+            'student' => $this->nextStudentNumber($year),
             'teacher' => TeacherProfile::count() + 1,
             'admin'   => AdminProfile::count() + 1,
             default   => 1,
         };
 
-        return $prefix.'-'.str_pad($count, 4, '0', STR_PAD_LEFT);
+        return $prefix.'-'.str_pad($next, 4, '0', STR_PAD_LEFT);
+    }
+
+    private function nextStudentNumber(int $year): int
+    {
+        $prefix = "OLS-{$year}-";
+
+        // Extrai o maior número já usado para este ano
+        $max = StudentProfile::where('student_code', 'like', $prefix.'%')
+            ->selectRaw('MAX(CAST(SUBSTRING(student_code, ?) AS UNSIGNED)) as max_num', [strlen($prefix) + 1])
+            ->value('max_num');
+
+        return ($max ?? 0) + 1;
     }
 }

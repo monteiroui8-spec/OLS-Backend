@@ -69,10 +69,12 @@ class StudentDashboardController extends Controller
             'welcomeName' => $user->first_name,
             'currentLevel' => $student->current_level ?? 'N/A',
             'stats' => [
-                'enrolledCourses' => $enrollments->count(),
-                'availableExams' => $upcomingExams->count(),
-                'averageGrade' => round($grades->avg('grade') ?? 0),
-                'pendingPayments' => $pendingPayments,
+                'enrolledCourses'  => $enrollments->count(),
+                'availableExams'   => $upcomingExams->count(),
+                'averageGrade'     => $grades->count() > 0
+                    ? round($grades->avg(fn ($g) => ($g->grade / max($g->max_grade, 1)) * 100))
+                    : 0,
+                'pendingPayments'  => $pendingPayments,
             ],
             'performanceTrend' => $trend,
             'courseProgress' => $courseProgress,

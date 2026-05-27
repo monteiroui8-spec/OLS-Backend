@@ -7,6 +7,7 @@ use App\Models\ClassGroup;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\EnrollmentRequest;
+use App\Models\Payment;
 use App\Models\StudentProfile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -60,13 +61,26 @@ class AdminEnrollmentRequestController extends Controller
                 'responded_at' => $r->responded_at?->toISOString(),
                 'admin_notes' => $r->admin_notes,
                 'user' => [
-                    'id' => $user?->id,
-                    'full_name' => $user?->full_name,
-                    'email' => $user?->email,
-                    'username' => $user?->username,
-                    'phone' => $user?->phone,
-                    'cpf' => $user?->cpf,
-                    'status' => $user?->status,
+                    'id'             => $user?->id,
+                    'full_name'      => $user?->full_name,
+                    'email'          => $user?->email,
+                    'username'       => $user?->username,
+                    'phone'          => $user?->phone,
+                    'cpf'            => $user?->cpf,
+                    'status'         => $user?->status,
+                    // Dados pessoais submetidos na inscrição
+                    'bi_number'      => $user?->bi_number,
+                    'birth_date'     => $user?->birth_date
+                        ? (\Carbon\Carbon::parse($user->birth_date)->toDateString())
+                        : null,
+                    'gender'         => $user?->gender,
+                    'nationality'    => $user?->nationality,
+                    'address'        => $user?->address,
+                    'province'       => $user?->province,
+                    'marital_status' => $user?->marital_status,
+                    'guardian_name'  => $user?->guardian_name,
+                    'guardian_phone' => $user?->guardian_phone,
+                    'country'        => $user?->country,
                 ],
                 'course' => $course ? [
                     'id'             => $course->id,
@@ -209,6 +223,12 @@ class AdminEnrollmentRequestController extends Controller
 
         $classGroup->loadMissing(['schedules', 'teacher.user']);
         $this->sendApprovedEmail($user, $student, $course, $classGroup, $enrollmentRequest->protocol, $plainPassword);
+
+        try {
+            $user->notify(new \App\Notifications\EnrollmentApprovedNotification(
+                $enrollmentRequest->course?->getTitle('pt') ?? ''
+            ));
+        } catch (\Throwable) { /* Non-fatal */ }
 
         return response()->json([
             'message' => 'Pedido aprovado e email enviado.',

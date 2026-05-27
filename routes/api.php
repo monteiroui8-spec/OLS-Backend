@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\Public\ContactController;
 use App\Http\Controllers\Api\Public\CourseEnrollmentController;
+use App\Http\Controllers\Api\Public\EnrollmentInterestController;
 use App\Http\Controllers\Api\Public\NewsletterController;
 use App\Http\Controllers\Api\PublicCourseController;
 use App\Http\Controllers\Api\Student\StudentCourseController;
@@ -34,6 +35,10 @@ use App\Http\Controllers\Api\Student\StudentScheduleController;
 use App\Http\Controllers\Api\Student\StudentAssignmentController;
 use App\Http\Controllers\Api\Student\StudentMaterialController;
 use App\Http\Controllers\Api\Student\StudentReportController;
+use App\Http\Controllers\Api\Student\StudentTestimonialController;
+use App\Http\Controllers\Api\Admin\AdminAttendanceController;
+use App\Http\Controllers\Api\Student\StudentAttendanceController;
+use App\Http\Controllers\Api\Teacher\TeacherAttendanceController;
 use App\Http\Controllers\Api\Teacher\TeacherClassController;
 use App\Http\Controllers\Api\Teacher\TeacherExamController;
 use App\Http\Controllers\Api\Teacher\TeacherGradeController;
@@ -106,7 +111,8 @@ Route::prefix('public')->middleware('throttle:public')
         Route::get('stats',                      [PublicCourseController::class, 'stats']);
         Route::get('exchange-rates',             [PublicCourseController::class, 'rates']);
         Route::get('testimonials',               [PublicCourseController::class, 'testimonials']);
-        Route::post('contact',                   [ContactController::class, 'store']);
+        Route::post('contact',               [ContactController::class, 'store']);
+        Route::post('enrollment-request',    [EnrollmentInterestController::class, 'store']);
         Route::post('newsletter',                [NewsletterController::class, 'subscribe']);
         Route::get('newsletter/unsubscribe',     [NewsletterController::class, 'unsubscribe']);
 
@@ -141,6 +147,11 @@ Route::middleware(['auth:sanctum', 'check.account.status', 'throttle:api'])
         Route::get('payments',                       [StudentPaymentController::class, 'index']);
         Route::get('payments/{payment}/receipt',     [StudentPaymentController::class, 'receipt']);
         Route::post('payments/{payment}/proof',      [StudentPaymentController::class, 'uploadProof']);
+        // Testemunhos
+        Route::get('testimonials',                   [StudentTestimonialController::class, 'index']);
+        Route::post('testimonials',                  [StudentTestimonialController::class, 'store']);
+        // Presenças
+        Route::get('attendance',                     [StudentAttendanceController::class, 'index']);
     });
 
 // ─── Teacher ─────────────────────────────────────────────────────────────────
@@ -167,6 +178,10 @@ Route::middleware(['auth:sanctum', 'check.account.status', 'role:teacher|admin',
         Route::get('grades',                               [TeacherGradeController::class, 'index']);
         Route::post('grades',                              [TeacherGradeController::class, 'store']);
         Route::get('report',                               [TeacherReportController::class, 'index']);
+        // ── Presenças ────────────────────────────────────────────────────────
+        Route::get('attendance/dates',                     [TeacherAttendanceController::class, 'dates']);
+        Route::get('attendance',                           [TeacherAttendanceController::class, 'index']);
+        Route::post('attendance',                          [TeacherAttendanceController::class, 'store']);
     });
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
@@ -213,6 +228,10 @@ Route::middleware(['auth:sanctum', 'check.account.status', 'role:admin', 'thrott
         Route::delete('courses/{course}',        [AdminCourseController::class, 'destroy']);
         Route::post('courses/{course}/restore',  [AdminCourseController::class, 'restore']);
 
+        // ── Presenças ────────────────────────────────────────────────────────
+        Route::get('attendance/summary',                                       [AdminAttendanceController::class, 'summary']);
+        Route::get('attendance',                                               [AdminAttendanceController::class, 'index']);
+
         // ── Pedidos de inscrição ─────────────────────────────────────────────
         Route::get('enrollment-requests',                                      [AdminEnrollmentRequestController::class, 'index']);
         Route::post('enrollment-requests/{enrollmentRequest}/approve',         [AdminEnrollmentRequestController::class, 'approve']);
@@ -224,6 +243,8 @@ Route::middleware(['auth:sanctum', 'check.account.status', 'role:admin', 'thrott
 
         // ── Testemunhos ──────────────────────────────────────────────────────
         Route::apiResource('testimonials', AdminTestimonialController::class);
+        Route::post('testimonials/{testimonial}/approve', [AdminTestimonialController::class, 'approve']);
+        Route::post('testimonials/{testimonial}/reject',  [AdminTestimonialController::class, 'reject']);
 
         // ── Relatórios ───────────────────────────────────────────────────────
         Route::get('reports',                    [AdminReportController::class, 'index']);
@@ -231,6 +252,8 @@ Route::middleware(['auth:sanctum', 'check.account.status', 'role:admin', 'thrott
         Route::get('reports/enrolled-students',  [AdminReportController::class, 'enrolledStudents']);
         Route::get('reports/payments',           [AdminReportController::class, 'payments']);
         Route::get('reports/attendance',         [AdminReportController::class, 'attendance']);
+        Route::get('reports/export/excel',       [AdminReportController::class, 'exportExcel']);
+        Route::get('reports/export/word',        [AdminReportController::class, 'exportWord']);
 
         // ── Blog ─────────────────────────────────────────────────────────────
         Route::post('blog/upload-image',            [AdminBlogController::class, 'uploadImage']);

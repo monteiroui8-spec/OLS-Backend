@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Exam extends Model {
     use HasUlids, SoftDeletes;
-    protected $fillable = ['title','class_group_id','course_id','teacher_id','duration','max_attempts','status','due_date','total_points','pass_score'];
-    protected $casts = ['due_date'=>'datetime'];
+    protected $fillable = ['title','class_group_id','course_id','teacher_id','duration','max_attempts','status','due_date','start_date','end_date','total_points','pass_score'];
+    protected $casts = ['due_date'=>'datetime','start_date'=>'datetime','end_date'=>'datetime'];
 
     public function questions(): HasMany { return $this->hasMany(Question::class)->orderBy('order'); }
     public function attempts(): HasMany  { return $this->hasMany(ExamAttempt::class); }

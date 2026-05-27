@@ -159,7 +159,15 @@ class AdminCourseController extends Controller
             'meta_description' => ['nullable', 'string', 'max:180'],
             'tags'         => ['nullable', 'array'],
             'image_url'    => ['nullable', 'string'],
+            'image'        => ['nullable', 'image', 'max:5120'], // upload directo no formulário
         ]);
+
+        // Se enviou ficheiro de imagem directamente, faz upload e usa a URL gerada
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('courses/images', 'public');
+            $validated['image_url'] = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        }
+        unset($validated['image']); // não é coluna na BD
 
         if (($validated['visibility_status'] ?? null) === 'published' && empty($validated['published_at'])) {
             $validated['published_at'] = now();
@@ -208,7 +216,14 @@ class AdminCourseController extends Controller
             'meta_description' => ['sometimes', 'nullable', 'string', 'max:180'],
             'tags'         => ['sometimes', 'nullable', 'array'],
             'image_url'    => ['sometimes', 'nullable', 'string'],
+            'image'        => ['sometimes', 'nullable', 'image', 'max:5120'],
         ]);
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('courses/images', 'public');
+            $validated['image_url'] = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        }
+        unset($validated['image']);
 
         if (array_key_exists('visibility_status', $validated)) {
             $newStatus = $validated['visibility_status'];

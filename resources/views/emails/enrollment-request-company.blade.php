@@ -36,6 +36,43 @@
             <div class="label">Telefone</div>
             <div class="value">{{ $user->phone }}</div>
         </div>
+        @if($user->bi_number)
+        <div class="item">
+            <div class="label">Nº do BI</div>
+            <div class="value">{{ $user->bi_number }}</div>
+        </div>
+        @endif
+        @if($user->birth_date)
+        <div class="item">
+            <div class="label">Data de Nascimento</div>
+            <div class="value">{{ \Carbon\Carbon::parse($user->birth_date)->format('d/m/Y') }}</div>
+        </div>
+        @endif
+        @if($user->gender)
+        @php $genderMap = ['M' => 'Masculino', 'F' => 'Feminino', 'outro' => 'Outro']; @endphp
+        <div class="item">
+            <div class="label">Sexo</div>
+            <div class="value">{{ $genderMap[$user->gender] ?? $user->gender }}</div>
+        </div>
+        @endif
+        @if($user->nationality)
+        <div class="item">
+            <div class="label">Nacionalidade</div>
+            <div class="value">{{ $user->nationality }}</div>
+        </div>
+        @endif
+        @if($user->address)
+        <div class="item">
+            <div class="label">Morada</div>
+            <div class="value">{{ $user->address }}{{ $user->province ? ', '.$user->province : '' }}</div>
+        </div>
+        @endif
+        @if($user->guardian_name)
+        <div class="item">
+            <div class="label">Encarregado de Educação</div>
+            <div class="value">{{ $user->guardian_name }}{{ $user->guardian_phone ? ' · '.$user->guardian_phone : '' }}</div>
+        </div>
+        @endif
         <div class="item">
             <div class="label">Curso</div>
             <div class="value">{{ $course->title_pt }}</div>

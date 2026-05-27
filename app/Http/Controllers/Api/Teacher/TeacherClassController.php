@@ -52,7 +52,7 @@ class TeacherClassController extends Controller
         $classIds = ClassGroup::where('teacher_id', $teacher->id)->pluck('id');
 
         $enrollments = \App\Models\Enrollment::whereIn('class_group_id', $classIds)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'enrolled'])
             ->with(['student.user', 'classGroup.course', 'student.grades' => function ($q) use ($teacher) {
                 $q->where('teacher_id', $teacher->id)->orderByDesc('date')->limit(5);
             }])
